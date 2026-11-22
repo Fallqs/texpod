@@ -287,7 +287,7 @@ int main() {
     def test_header_overrides_core_defaults_only_on_c3(self):
         expected = {
             "MEM_ALLOC_MODE_INTERNAL": 1, "ROLE_CENTRAL": 1, "ROLE_OBSERVER": 1,
-            "ROLE_PERIPHERAL": 0, "ROLE_BROADCASTER": 0, "MAX_CONNECTIONS": 1,
+            "ROLE_PERIPHERAL": 1, "ROLE_BROADCASTER": 1, "MAX_CONNECTIONS": 1,
             "MAX_BONDS": 4, "MAX_CCCDS": 2, "ATT_PREFERRED_MTU": 23,
             "MSYS1_BLOCK_COUNT": 6, "MSYS_1_BLOCK_COUNT": 6, "MSYS_2_BLOCK_COUNT": 6,
             "MSYS_1_BLOCK_SIZE": 256, "MSYS_2_BLOCK_SIZE": 320,

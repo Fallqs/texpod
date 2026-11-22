@@ -1114,3 +1114,39 @@ The transparent overlay has its own target `/sleep-overlay.bmp` and independent
 version 1 three-byte schema. Recovery checks both targets; committing a normal
 sleep image and committing an overlay never overwrite one another's image or
 transaction files.
+
+## Texpod SD glyph pack (TPF1)
+
+Texpod packs are separate from reader `.cpfont` assets and firmware updates. A
+pack holds complete glyph-ID tables for the selected Android font faces at one
+integer pixel size. The two installed slots are `/.crosspoint/texpod-font-0.tpf`
+and `/.crosspoint/texpod-font-1.tpf`; an interrupted transfer must not replace
+an installed generation. If neither slot nor its backup matches, the reader
+opens `/.crosspoint/texpod-fonts/<32 lowercase generation hex digits>.tpf`.
+Baked packs use the same checks and are read-only; a BLE upload can replace a
+writable slot but never modifies a baked file. All integers are little-endian.
+
+- Header (32 bytes): `TPF1` magic, 16-byte nonzero generation ID, `u16` pixel
+  size, `u16` face count (1–16), `u32` total file size (at most 64 MiB), and
+  `u32` CRC32 of the first 28 bytes followed by the directory.
+- Directory (8 bytes per face, in wire face-number order): `u32` glyph count
+  (1–65536), `u16` record stride (12–1036), `u16` reserved (zero). Face tables
+  follow the directory consecutively; there is no other index in RAM. The
+  exact file length is the header and directory length plus the sum of each
+  face's count times its stride.
+- Record: `u16` width, `u16` height, `i16` left and top offsets from the
+  baseline, then `ceil(width / 8) × height` bytes of row-major, MSB-first 1bpp
+  ink and a `u32` CRC32 of the metrics and ink. At most 1024 ink bytes are
+  allowed. Empty glyphs have zero width, height, and offsets. The remaining
+  bytes pad the record to the face's stride. A single direct read suffices
+  on a RAM miss; a page turn never modifies the pack.
+
+CRC32 uses the same IEEE polynomial as the Texpod wire framing. An Android
+renderer or face change must produce a distinct generation ID. All lengths,
+metrics and record CRCs are checked before drawing. The reader validates the
+staged `/.crosspoint/texpod-font.part` before activation. If that generation
+is already installed, a force update replaces its slot; otherwise it uses a
+slot other than the selected one. Replacement temporarily retains the previous
+slot as `texpod-font-0.bak` or `texpod-font-1.bak`. If power is lost between
+renames, the reader can open the backup directly. The `.part` file is never
+read for page rendering.

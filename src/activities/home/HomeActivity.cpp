@@ -20,9 +20,14 @@
 #include "HapticFeedback.h"
 #include "MappedInputManager.h"
 #include "RecentBooksStore.h"
+#include "activities/apps/AppsMenuActivity.h"
+#include "components/UIScale.h"
 #include "components/UITheme.h"
+#include "components/UiAppHelpers.h"
+#include "components/icons/apps.h"
 #include "fontIds.h"
 #include "util/BookCoverLoader.h"
+#include "util/TimeUtils.h"
 
 namespace {
 struct HomeMenuEntry {
@@ -31,11 +36,43 @@ struct HomeMenuEntry {
   UIIcon icon;
 };
 
+enum class LauncherItem : uint8_t { Recent, Texpod, Bookshelf, Drawer, Settings };
+constexpr int kLauncherCount = 5;
+constexpr StrId kLauncherLabels[] = {StrId::STR_CONTINUE_READING, StrId::STR_TEXT_PLAYER_TITLE, StrId::STR_LIBRARY,
+                                     StrId::STR_APPS_TITLE, StrId::STR_SETTINGS_TITLE};
+constexpr UIIcon kLauncherIcons[] = {Book, AirPage, Library, Apps, Settings};
+
+struct LauncherLayout {
+  Rect status;
+  Rect card;
+  int rowHeight;
+  int gap;
+
+  Rect item(int index) const {
+    if (index == 0) return card;
+    return Rect{card.x, card.y + card.height + gap + (index - 1) * (rowHeight + gap), card.width, rowHeight};
+  }
+};
+
+LauncherLayout launcherLayout(const GfxRenderer& renderer) {
+  auto& theme = UITheme::getInstance();
+  const auto& metrics = theme.getMetrics();
+  const Rect safe = theme.getScreenSafeArea(renderer, true);
+  const int pad = metrics.contentSidePadding;
+  const int gap = std::max(6, metrics.verticalSpacing);
+  const int statusHeight = std::max(metrics.batteryBarHeight, renderer.getLineHeight(SMALL_FONT_ID));
+  const int room = std::max(6, safe.height - statusHeight - 5 * gap);
+  const int rowHeight = std::min(metrics.menuRowHeight, room / 5);
+  const int cardHeight = std::min(room - 4 * rowHeight, std::max(2 * rowHeight, safe.height / 3));
+  return {Rect{safe.x + pad, safe.y, safe.width - 2 * pad, statusHeight},
+          Rect{safe.x + pad, safe.y + statusHeight + gap, safe.width - 2 * pad, cardHeight}, rowHeight, gap};
+}
+
 constexpr HomeMenuEntry kDefaultMenuOrder[] = {
     {HomeMenuItem::FILE_BROWSER, StrId::STR_BROWSE_FILES, Folder},
     {HomeMenuItem::LIBRARY, StrId::STR_LIBRARY, Library},
     {HomeMenuItem::PLUGINS, StrId::STR_PLUGINS, Plugins},
-    {HomeMenuItem::FILE_TRANSFER, StrId::STR_FILE_TRANSFER, Transfer},
+    {HomeMenuItem::TEXT_PLAYER, StrId::STR_TEXT_PLAYER_TITLE, AirPage},
     {HomeMenuItem::SETTINGS_MENU, StrId::STR_SETTINGS_TITLE, Settings},
     {HomeMenuItem::APPS, StrId::STR_APPS_TITLE, Apps},
 };
@@ -44,7 +81,7 @@ constexpr HomeMenuEntry kCarouselMenuOrder[] = {
     {HomeMenuItem::RECENTS, StrId::STR_MENU_RECENT_BOOKS, Recent},
     {HomeMenuItem::PLUGINS, StrId::STR_PLUGINS, Plugins},
     {HomeMenuItem::APPS, StrId::STR_APPS_TITLE, Apps},
-    {HomeMenuItem::FILE_TRANSFER, StrId::STR_FILE_TRANSFER, Transfer},
+    {HomeMenuItem::TEXT_PLAYER, StrId::STR_TEXT_PLAYER_TITLE, AirPage},
     {HomeMenuItem::SETTINGS_MENU, StrId::STR_SETTINGS_TITLE, Settings},
 };
 constexpr int kHomeMenuItemCount = 6;
@@ -62,7 +99,7 @@ constexpr HomeMenuItem indexToMenuItem(int index, bool hasPlugins, bool carousel
 }
 
 constexpr int menuItemToIndex(HomeMenuItem item, bool hasPlugins, bool carousel) {
-  if (item == HomeMenuItem::OPDS_BROWSER) item = HomeMenuItem::FILE_TRANSFER;
+  if (item == HomeMenuItem::OPDS_BROWSER) item = HomeMenuItem::APPS;
   const int count = hasPlugins ? kHomeMenuItemCount : kHomeMenuItemCount - 1;
   for (int i = 0; i < count; ++i) {
     if (indexToMenuItem(i, hasPlugins, carousel) == item) return i;
@@ -74,14 +111,17 @@ static_assert(indexToMenuItem(2, false, true) == HomeMenuItem::APPS);
 static_assert(indexToMenuItem(4, false, true) == HomeMenuItem::SETTINGS_MENU);
 static_assert(indexToMenuItem(3, true, true) == HomeMenuItem::APPS);
 static_assert(indexToMenuItem(5, true, true) == HomeMenuItem::SETTINGS_MENU);
-static_assert(indexToMenuItem(2, false, false) == HomeMenuItem::FILE_TRANSFER);
+static_assert(indexToMenuItem(2, false, false) == HomeMenuItem::TEXT_PLAYER);
+static_assert(indexToMenuItem(3, true, false) == HomeMenuItem::TEXT_PLAYER);
+static_assert(indexToMenuItem(3, false, true) == HomeMenuItem::TEXT_PLAYER);
+static_assert(indexToMenuItem(4, true, true) == HomeMenuItem::TEXT_PLAYER);
 static_assert(indexToMenuItem(4, false, false) == HomeMenuItem::APPS);
 static_assert(menuItemToIndex(HomeMenuItem::APPS, false, true) == 2);
 static_assert(menuItemToIndex(HomeMenuItem::SETTINGS_MENU, true, true) == 5);
 }  // namespace
 
 int HomeActivity::getMenuItemCount() const {
-  int count = 5;  // File Browser, Recents, File transfer, Settings, Apps
+  int count = kHomeMenuItemCount - 1;
   if (!recentBooks.empty()) {
     count += recentBooks.size();
   }
@@ -335,6 +375,33 @@ void HomeActivity::onEnter() {
     coverGridUi = makeUniqueNoThrow<CoverGridHomeUi>(renderer);
     if (!coverGridUi) LOG_ERR("HOME", "OOM: cover grid UI; using standard home");
   }
+  if (usesLauncher()) {
+    loadRecentBooks(1);
+    using Button = MappedInputManager::Button;
+    launcherReleaseBarrier = mappedInput.isPressed(Button::Confirm) || mappedInput.isPressed(Button::Back);
+    switch (initialMenuItem) {
+      case HomeMenuItem::TEXT_PLAYER:
+        launcherSelection = static_cast<int>(LauncherItem::Texpod);
+        break;
+      case HomeMenuItem::FILE_BROWSER:
+      case HomeMenuItem::LIBRARY:
+        launcherSelection = static_cast<int>(LauncherItem::Bookshelf);
+        break;
+      case HomeMenuItem::APPS:
+      case HomeMenuItem::OPDS_BROWSER:
+      case HomeMenuItem::PLUGINS:
+        launcherSelection = static_cast<int>(LauncherItem::Drawer);
+        break;
+      case HomeMenuItem::SETTINGS_MENU:
+        launcherSelection = static_cast<int>(LauncherItem::Settings);
+        break;
+      case HomeMenuItem::NONE:
+      case HomeMenuItem::RECENTS:
+        break;
+    }
+    requestUpdate();
+    return;
+  }
   loadRecentBooks(coverGridUi ? CoverGridHomeUi::MAX_BOOKS : metrics.homeRecentBooksCount);
   hasContinueReading = !recentBooks.empty();
   if (coverGridUi) {
@@ -412,7 +479,78 @@ void HomeActivity::freeCoverBuffer() {
   coverBufferUnavailable = false;
 }
 
+bool HomeActivity::usesLauncher() const {
+  return !coverGridUi && SETTINGS.uiTheme != CrossPointSettings::LYRA_CAROUSEL;
+}
+
+void HomeActivity::openLauncherItem() {
+  switch (static_cast<LauncherItem>(launcherSelection.load())) {
+    case LauncherItem::Recent:
+      if (AppsMenuActivity::recentAppTitle())
+        AppsMenuActivity::openRecentApp();
+      else if (!recentBooks.empty())
+        onRecentBookSelected(recentBooks.front().path);
+      else
+        onRecentsOpen();
+      break;
+    case LauncherItem::Texpod:
+      activityManager.goToTextPlayerFromHome();
+      break;
+    case LauncherItem::Bookshelf:
+      onFileBrowserOpen();
+      break;
+    case LauncherItem::Drawer:
+      onAppsOpen();
+      break;
+    case LauncherItem::Settings:
+      onSettingsOpen();
+      break;
+  }
+}
+
+void HomeActivity::loopLauncher() {
+  using Button = MappedInputManager::Button;
+  if (launcherReleaseBarrier) {
+    launcherReleaseBarrier = mappedInput.isPressed(Button::Confirm) || mappedInput.isPressed(Button::Back);
+    return;
+  }
+
+  const auto move = [this](bool forward) {
+    const int current = launcherSelection.load();
+    launcherSelection = forward ? ButtonNavigator::nextIndex(current, kLauncherCount)
+                                : ButtonNavigator::previousIndex(current, kLauncherCount);
+    requestUpdate();
+  };
+  buttonNavigator.onNext([&] { move(true); });
+  buttonNavigator.onPrevious([&] { move(false); });
+
+  int x, y;
+  if (mappedInput.wasScreenTapped(x, y)) {
+    const auto layout = launcherLayout(renderer);
+    for (int i = 0; i < kLauncherCount; ++i) {
+      const Rect item = layout.item(i);
+      if (x < item.x || x >= item.x + item.width || y < item.y || y >= item.y + item.height) continue;
+      launcherSelection = i;
+      haptic_feedback::touchAction();
+      openLauncherItem();
+      return;
+    }
+  }
+  if (!SETTINGS.standbyShortcutEnabled && mappedInput.wasReleased(Button::Back)) {
+    if (AppsMenuActivity::recentAppTitle())
+      AppsMenuActivity::openRecentApp();
+    else if (!recentBooks.empty())
+      onRecentBookSelected(recentBooks.front().path);
+    return;
+  }
+  if (mappedInput.wasReleased(Button::Confirm)) openLauncherItem();
+}
+
 void HomeActivity::loop() {
+  if (usesLauncher()) {
+    loopLauncher();
+    return;
+  }
   const int menuCount = getMenuItemCount();
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int bookCount = static_cast<int>(recentBooks.size());
@@ -439,8 +577,8 @@ void HomeActivity::loop() {
       case HomeMenuItem::PLUGINS:
         onPluginsOpen();
         break;
-      case HomeMenuItem::FILE_TRANSFER:
-        onFileTransferOpen();
+      case HomeMenuItem::TEXT_PLAYER:
+        activityManager.goToTextPlayerFromHome();
         break;
       case HomeMenuItem::SETTINGS_MENU:
         onSettingsOpen();
@@ -695,7 +833,69 @@ void HomeActivity::loop() {
   }
 }
 
+void HomeActivity::drawLauncher() {
+  namespace fui = freeink::ui;
+  renderer.clearScreen();
+  const auto layout = launcherLayout(renderer);
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const auto fonts = uiScaleSpec();
+  const int selection = launcherSelection.load();
+  char clock[12];
+  if (TimeUtils::formatCurrentTime(clock, sizeof(clock), SETTINGS.clockFormat == 1)) {
+    renderer.drawText(SMALL_FONT_ID, layout.status.x, layout.status.y, clock);
+  }
+  GUI.drawBatteryRight(renderer,
+                       Rect{layout.status.x + layout.status.width - metrics.batteryWidth, layout.status.y,
+                            metrics.batteryWidth, metrics.batteryHeight},
+                       true, SMALL_FONT_ID);
+
+  const Rect card = layout.card;
+  const int radius = std::min(metrics.controlRadius, layout.rowHeight / 4);
+  const bool activeCard = selection == 0;
+  renderer.drawRoundedRect(card.x, card.y, card.width, card.height, activeCard ? 3 : 1, radius, true);
+  const char* recent = AppsMenuActivity::recentAppTitle();
+  if (!recent && !recentBooks.empty()) recent = recentBooks.front().title.c_str();
+  const Rect textArea{card.x + layout.gap, card.y + layout.gap, card.width - 2 * layout.gap,
+                      card.height - 2 * layout.gap};
+  UITheme::drawCenteredWrappedText(renderer, textArea, fonts.titleFontId, recent ? recent : tr(STR_MENU_RECENT_BOOKS),
+                                   2);
+
+  auto target = makeUiTarget(renderer);
+  for (int i = 1; i < kLauncherCount; ++i) {
+    const Rect row = layout.item(i);
+    const bool selected = selection == i;
+    if (selected) renderer.fillRoundedRect(row.x, row.y, row.width, row.height, radius, Color::Black);
+    constexpr int iconSize = 32;
+    const auto iconType = kLauncherIcons[i];
+    const auto icon = iconType == Settings ? fui::bitmapFromIcon(icon_settings_32) : listIconFor(iconType, iconSize);
+    const int x = row.x + layout.gap;
+    const int iconY = row.y + (row.height - iconSize) / 2;
+    const bool black = !selected;
+    if (iconType == Apps) {
+      if (black)
+        renderer.drawIcon(AppsIcon, x, iconY, iconSize);
+      else
+        renderer.drawIconInverted(AppsIcon, x, iconY, iconSize);
+    } else if (icon) {
+      target.bitmap(fui::Rect{static_cast<int16_t>(x), static_cast<int16_t>(iconY), iconSize, iconSize}, icon,
+                    fui::BitmapMode::Center, fui::Paint::solid(black ? fui::Color::Black : fui::Color::White));
+    }
+    renderer.drawText(fonts.bodyFontId, x + iconSize + layout.gap,
+                      row.y + (row.height - renderer.getLineHeight(fonts.bodyFontId)) / 2, I18N.get(kLauncherLabels[i]),
+                      black);
+  }
+  const auto labels = mappedInput.mapLabels(SETTINGS.standbyShortcutEnabled ? tr(STR_STANDBY_TITLE) : tr(STR_BACK),
+                                            tr(STR_SELECT), tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  renderer.displayBuffer(firstRenderDone ? HalDisplay::FAST_REFRESH : HalDisplay::HALF_REFRESH);
+  firstRenderDone = true;
+}
+
 void HomeActivity::render(RenderLock&&) {
+  if (usesLauncher()) {
+    drawLauncher();
+    return;
+  }
   static_assert(canRenderCarouselMenuOnly(true, true, CarouselUpdateScope::MenuOnly));
   static_assert(!canRenderCarouselMenuOnly(false, true, CarouselUpdateScope::MenuOnly));
   static_assert(!canRenderCarouselMenuOnly(true, false, CarouselUpdateScope::MenuOnly));
@@ -858,8 +1058,6 @@ void HomeActivity::onRecentsOpen() { activityManager.goToRecentBooks(); }
 void HomeActivity::onLibraryOpen() { activityManager.goToLibrary(); }
 
 void HomeActivity::onSettingsOpen() { activityManager.goToSettings(); }
-
-void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 
 void HomeActivity::onAppsOpen() { activityManager.goToApps(); }
 

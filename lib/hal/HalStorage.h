@@ -134,6 +134,8 @@ class HalFile : public Print {
   bool seek64(uint64_t pos);
   bool seekCur(int64_t offset);
   bool seekSet(size_t offset);
+  // Best-effort, once per open read-only file. False leaves normal seeks available.
+  bool prepareRandomReads();
   bool truncate(uint64_t length);
   int available() const;
   size_t position() const;

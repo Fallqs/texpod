@@ -24,6 +24,7 @@
 #include "apps/buddy/BuddyActivity.h"
 #include "apps/calculator/CalculatorActivity.h"
 #include "apps/sokoban/SokobanGameActivity.h"
+#include "apps/text-player/TextPlayerActivity.h"
 #include "components/SubpageLayout.h"
 #ifdef ENABLE_CHINESE_VERSION
 #include "apps/chinese-chess/ChineseChessMenuActivity.h"
@@ -596,7 +597,10 @@ void ActivityManager::goToReader(std::string path, const bool allowFastInitialRe
     return;
   }
   auto activity = ReaderActivity::create(renderer, mappedInput, std::move(path), allowFastInitialRefresh);
-  if (activity) replaceActivity(std::move(activity));
+  if (activity) {
+    AppsMenuActivity::clearRecentApp();
+    replaceActivity(std::move(activity));
+  }
 }
 
 void ActivityManager::goToSleep(bool fromTimeout) {
@@ -623,8 +627,6 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem) {
   if (SETTINGS.uiTheme == CrossPointSettings::UI_THEME::INX) {
     mainTabFocus = MainTabFocus::Tabs;
     mainTabEntryReleasePending = false;
-    goToInxRecent();
-    return;
   }
   if (initialMenuItem == HomeMenuItem::NONE && currentActivity) {
     const auto& activityName = currentActivity->name;
@@ -634,10 +636,8 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem) {
       initialMenuItem = HomeMenuItem::LIBRARY;
     } else if (activityName == "PluginCatalog") {
       initialMenuItem = HomeMenuItem::PLUGINS;
-    } else if (activityName == "OpdsBookBrowser") {
-      initialMenuItem = HomeMenuItem::FILE_TRANSFER;
-    } else if (activityName == "CrossPointWebServer") {
-      initialMenuItem = HomeMenuItem::FILE_TRANSFER;
+    } else if (activityName == "OpdsBookBrowser" || activityName == "CrossPointWebServer") {
+      initialMenuItem = HomeMenuItem::APPS;
     } else if (activityName == "Settings" || activityName == "SettingsList") {
       initialMenuItem = HomeMenuItem::SETTINGS_MENU;
     }
@@ -669,6 +669,12 @@ void ActivityManager::goToWoodfish() { replaceActivityWith<WoodfishActivity>(); 
 void ActivityManager::goToGame2048() { replaceActivityWith<Game2048Activity>(); }
 
 void ActivityManager::goToAirPage() { replaceActivityWith<AirPageActivity>(); }
+
+void ActivityManager::goToTextPlayer() { replaceActivityWith<TextPlayerActivity>(); }
+
+void ActivityManager::goToTextPlayerFromHome() {
+  if (replaceActivityWith<TextPlayerActivity>(/*returnToHome=*/true)) AppsMenuActivity::rememberTexpod();
+}
 
 void ActivityManager::goToBuddy() { replaceActivityWith<BuddyActivity>(); }
 
@@ -776,6 +782,10 @@ bool ActivityManager::remoteTurn(const bool forward, const bool chapter) {
   const bool turned = chapter ? reader->skipPages(forward ? 1 : -1) : reader->pageTurn(forward);
   if (turned) requestUpdate();
   return turned;
+}
+
+bool ActivityManager::hasCompleteFramebuffer() const {
+  return !currentActivity || currentActivity->hasCompleteFramebuffer();
 }
 
 bool ActivityManager::skipLoopDelay() const { return currentActivity && currentActivity->skipLoopDelay(); }

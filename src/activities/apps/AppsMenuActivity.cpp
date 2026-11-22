@@ -37,6 +37,8 @@ constexpr AppEntry kAppEntries[] = {
     {AppId::WeRead, StrId::STR_WEREAD_TITLE, UIIcon::WeRead, &ActivityManager::goToWeRead},
 #endif
     {AppId::AirPage, StrId::STR_AIRPAGE_TITLE, UIIcon::AirPage, &ActivityManager::goToAirPage},
+    {AppId::TextPlayer, StrId::STR_TEXT_PLAYER_TITLE, UIIcon::AirPage, &ActivityManager::goToTextPlayer},
+    {AppId::Plugins, StrId::STR_PLUGINS, UIIcon::Plugins, &ActivityManager::goToPlugins},
     {AppId::ReadingStats, StrId::STR_READING_STATS, UIIcon::ReadingStats, &ActivityManager::goToReadingStatsMenu},
     {AppId::Sudoku, StrId::STR_SUDOKU_TITLE, UIIcon::Sudoku, &ActivityManager::goToSudoku},
     {AppId::Gomoku, StrId::STR_GOMOKU_TITLE, UIIcon::Gomoku, &ActivityManager::goToGomoku},
@@ -55,6 +57,8 @@ constexpr AppEntry kAppEntries[] = {
 };
 
 constexpr int kAppCount = static_cast<int>(sizeof(kAppEntries) / sizeof(kAppEntries[0]));
+constexpr int kNoRecentApp = -1;
+std::atomic<int> recentApp{kNoRecentApp};
 
 constexpr int visibleAppCount(const uint32_t hiddenMask) {
   int count = 0;
@@ -76,10 +80,16 @@ constexpr int appIndexForVisibleIndex(const uint32_t hiddenMask, const int visib
   return -1;
 }
 
-constexpr uint32_t effectiveHiddenMask(const uint32_t hiddenMask, const bool hasOpdsServers) {
+constexpr uint32_t effectiveHiddenMask(const uint32_t hiddenMask, const bool hasOpdsServers,
+                                       const bool pluginsEnabled = true) {
   uint32_t effective = hiddenMask;
   if (!hasOpdsServers) effective |= appBit(AppId::OpdsBrowser);
+  if (!pluginsEnabled) effective |= appBit(AppId::Plugins);
   return effective;
+}
+
+uint32_t activeHiddenMask() {
+  return effectiveHiddenMask(SETTINGS.hiddenAppsMask, OPDS_STORE.hasServers(), SETTINGS.pluginsEnabled != 0);
 }
 
 constexpr bool appIdsAreUnique() {
@@ -128,16 +138,42 @@ bool AppsMenuActivity::setAppVisible(const int appIndex, const bool visible) {
   return true;
 }
 
-int AppsMenuActivity::getVisibleAppCount() {
-  return visibleAppCount(effectiveHiddenMask(SETTINGS.hiddenAppsMask, OPDS_STORE.hasServers()));
-}
+int AppsMenuActivity::getVisibleAppCount() { return visibleAppCount(activeHiddenMask()); }
 
 void AppsMenuActivity::selectMainTabContentEdge(const MainTabContentEdge edge) {
   moveSelectionTo(MainTabs::contentEdgeIndex(edge, getVisibleAppCount()));
 }
 
 int AppsMenuActivity::getAppIndexForVisibleIndex(const int visibleIndex) {
-  return appIndexForVisibleIndex(effectiveHiddenMask(SETTINGS.hiddenAppsMask, OPDS_STORE.hasServers()), visibleIndex);
+  return appIndexForVisibleIndex(activeHiddenMask(), visibleIndex);
+}
+
+void AppsMenuActivity::rememberTexpod() {
+  for (int i = 0; i < kAppCount; ++i) {
+    if (kAppEntries[i].id == AppId::TextPlayer) {
+      recentApp = i;
+      return;
+    }
+  }
+}
+
+void AppsMenuActivity::clearRecentApp() { recentApp = kNoRecentApp; }
+
+const char* AppsMenuActivity::recentAppTitle() {
+  const int index = recentApp.load();
+  if (index == kNoRecentApp) return nullptr;
+  const auto& app = kAppEntries[index];
+  if (app.id != AppId::TextPlayer && (activeHiddenMask() & appBit(app.id)) != 0) return nullptr;
+  return I18N.get(app.titleId);
+}
+
+void AppsMenuActivity::openRecentApp() {
+  if (!recentAppTitle()) return;
+  const auto& app = kAppEntries[recentApp.load()];
+  if (app.id == AppId::TextPlayer)
+    activityManager.goToTextPlayerFromHome();
+  else
+    (activityManager.*app.open)();
 }
 
 void AppsMenuActivity::onEnter() {
@@ -174,7 +210,9 @@ Rect AppsMenuActivity::appContentRect() const {
 
 void AppsMenuActivity::openSelected() {
   const int appIndex = getAppIndexForVisibleIndex(nav.selected);
-  if (appIndex >= 0) (activityManager.*kAppEntries[appIndex].open)();
+  if (appIndex < 0) return;
+  recentApp = appIndex;
+  (activityManager.*kAppEntries[appIndex].open)();
 }
 
 void AppsMenuActivity::activateIndex(const int index) {

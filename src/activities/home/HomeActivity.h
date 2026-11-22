@@ -23,6 +23,8 @@ class HomeActivity final : public Activity {
   bool firstRenderDone = false;
   bool hasPlugins = false;
   bool hasContinueReading = false;
+  bool launcherReleaseBarrier = false;
+  std::atomic<int> launcherSelection{0};
   int lastCarouselBookIndex = 0;
   bool coverRendered = false;           // Track if cover has been rendered once
   bool coverBufferStored = false;       // Track if cover buffer is stored
@@ -46,10 +48,13 @@ class HomeActivity final : public Activity {
   void onLibraryOpen();
   void onRecentsOpen();
   void onSettingsOpen();
-  void onFileTransferOpen();
   void onAppsOpen();
   void onPluginsOpen();
 
+  bool usesLauncher() const;
+  void loopLauncher();
+  void drawLauncher();
+  void openLauncherItem();
   int getMenuItemCount() const;
   static constexpr bool canRenderCarouselMenuOnly(bool isCarousel, bool recentsLoaded, CarouselUpdateScope scope) {
     return isCarousel && recentsLoaded && scope == CarouselUpdateScope::MenuOnly;

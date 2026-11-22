@@ -20,7 +20,7 @@ networks or in hotspot mode when you control who is connected.
 
 ## Starting File Transfer
 
-1. From the Home screen, select **File Transfer**.
+1. Open **Apps → File Transfer**.
 2. Choose one of the available modes:
 
 | Mode | Use when |

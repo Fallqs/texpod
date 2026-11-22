@@ -24,6 +24,10 @@ class AppsMenuActivity final : public UiListActivity {
   static StrId getAppTitleId(int appIndex);
   static bool isAppVisible(int appIndex);
   static bool setAppVisible(int appIndex, bool visible);
+  static void rememberTexpod();
+  static void clearRecentApp();
+  static const char* recentAppTitle();
+  static void openRecentApp();
 
  private:
   static int getVisibleAppCount();

@@ -27,7 +27,7 @@ enum class HomeMenuItem {
   RECENTS,
   LIBRARY,
   OPDS_BROWSER,
-  FILE_TRANSFER,
+  TEXT_PLAYER,
   SETTINGS_MENU,
   APPS,
   PLUGINS
@@ -157,6 +157,8 @@ class ActivityManager {
   void goToCalculator();
   void goToWoodfish();
   void goToAirPage();
+  void goToTextPlayer();
+  void goToTextPlayerFromHome();
   void goToBuddy();
   void goToStandby();
   void goToGame2048();
@@ -194,6 +196,7 @@ class ActivityManager {
   // A remote button mapped to the reader menu (true) or to a new clipping (false).
   bool remoteShortcut(bool readerMenu);
   bool handleForcedRefresh();
+  bool hasCompleteFramebuffer() const;
   bool skipLoopDelay() const;
   ScreenshotInfo getScreenshotInfo() const;
   void prepareForSleep();

@@ -17,3 +17,4 @@ def configure_host(build_env, node):
 
 
 env.AddBuildMiddleware(configure_host, "*/NimBLE-Arduino/src/*")
+env.AddBuildMiddleware(configure_host, "*/lib/TextPlayer/NimbleTransport.cpp")

@@ -19,6 +19,8 @@ build
 **/__pycache__/
 /compile_commands.json
 /.cache
+/android/.gradle/
+/android/local.properties
 .history/
 **/.venv/
 *.local*

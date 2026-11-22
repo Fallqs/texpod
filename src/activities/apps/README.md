@@ -101,7 +101,7 @@ Chess, Minesweeper, 2048, Ugly Avatar, Buddy, Sokoban, Pixel Switch, and Woodfis
 Existing masks are preserved except for the one-time Buddy migration from catalog version 0.
 The menu, launcher, and App Visibility settings all read this same table; no `switch` or `buildItems()` is needed.
 The visibility mask is 32-bit. `Calculator = 15` and `Woodfish = 16` are stable;
-IDs 17 through 31 remain available.
+`Library = 17` and `TextPlayer = 18` are stable. `TextPlayer` is the internal identifier for the user-facing Texpod app; IDs 19 through 31 remain available.
 
 ### 4. Add the i18n key and icon
 

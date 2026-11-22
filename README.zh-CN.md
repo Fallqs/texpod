@@ -14,6 +14,7 @@
 - **无线功能**：浏览器传书与设置、Calibre 无线连接、OPDS 下载、WebDAV 和设备 OTA 更新。 所有主题均从“文件传输 → OPDS 浏览器”进入；在目录中按住返回键一秒后松开，可回到主菜单。
 - **Apps 应用中心**：数独、五子棋、中国象棋、扫雷、2048、电子木鱼、Ugly Avatar 等轻量游戏与工具。[应用说明](./src/activities/apps/README.md)。
 - **AirPage**：扫码上传内容，通过手动刷新或前台实时投送显示 BMP/JPEG 图片，也可将图片设为休眠画面。[操作与联网行为](./src/activities/apps/README.md#airpage)。
+- **Texpod（Android 原型）**：`android/` 已实现系统级 Mock TTS、手机黑白页面预览、可选 BLE 传输与双端字形 LRU；固件中的 Texpod 应用实现网格/位图显示。Android 与 X3/X4 真机验收尚未完成。[Texpod 设计蓝图](./blue_print_portfolio/README.md)，端到端投读尚未验证。
 - **微信读书**：扫码登录、浏览书架、下载 EPUB 离线阅读和同步进度，在 China 内容区显示。[微信读书说明](./src/activities/apps/weread/README.md)。
 - **阅读分析与待机**：阅读统计、热力图、档案与成就，以及时钟和老黄历表盘。[阅读分析说明](./src/activities/apps/reading-stats/README.md)。
 - **语言与开发**：每个硬件目标使用包含全部 UI 语言的统一固件，并提供桌面模拟器辅助开发。

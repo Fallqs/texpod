@@ -48,7 +48,7 @@ class NimblePsramMiddlewareTest(unittest.TestCase):
                     self.assertNotIn("CROSSPOINT_BLE_HOST_PSRAM", value)
                     self.assertNotIn("NimBLE-Arduino", value)
 
-    def test_only_nimble_sources_are_overridden_and_next_middleware_gets_a_node(self):
+    def test_nimble_and_texpod_share_config_without_affecting_other_sources(self):
         root = Path(__file__).resolve().parents[2]
 
         class BuildEnv(dict):
@@ -59,8 +59,7 @@ class NimblePsramMiddlewareTest(unittest.TestCase):
                 return str(root) if value == "$PROJECT_DIR" else value
 
             def AddBuildMiddleware(self, callback, pattern):
-                self.callback = callback
-                self.pattern = pattern
+                self["middleware"][pattern] = callback
 
             def Object(self, node, **kwargs):
                 self.object_flags = kwargs["CCFLAGS"]
@@ -69,28 +68,35 @@ class NimblePsramMiddlewareTest(unittest.TestCase):
             def Depends(self, node, config):
                 self.dependency = (node, config)
 
-        env = BuildEnv(CCFLAGS=["-Os"])
-        runpy.run_path(
-            str(root / "scripts/configure_nimble_psram.py"),
-            init_globals={"env": env, "Import": lambda _: None},
-        )
-        self.assertTrue(fnmatch.fnmatch(".pio/libdeps/eego/NimBLE-Arduino/src/nimble/mem.c", env.pattern))
-        self.assertFalse(fnmatch.fnmatch("src/BleInput.cpp", env.pattern))
-        self.assertFalse(fnmatch.fnmatch("framework/cores/esp32/esp32-hal-bt.c", env.pattern))
-        node = object()
-        self.assertIs(env.callback(env, node), node)
-        self.assertEqual(env.dependency, (node, str(root / "src/platform/NimblePsramConfig.h")))
-        self.assertEqual(env["CCFLAGS"], ["-Os"])
-        self.assertEqual(
-            env.object_flags, ["-Os", "-include", str(root / "src/platform/NimblePsramConfig.h")]
-        )
-        env["custom_nimble_config"] = "src/platform/NimbleC3Config.h"
-        runpy.run_path(
-            str(root / "scripts/configure_nimble_psram.py"),
-            init_globals={"env": env, "Import": lambda _: None},
-        )
-        self.assertIs(env.callback(env, node), node)
-        self.assertEqual(env.dependency, (node, str(root / "src/platform/NimbleC3Config.h")))
+        for header in ("NimbleC3Config.h", "NimblePsramConfig.h"):
+            with self.subTest(header=header):
+                relative_config = f"src/platform/{header}"
+                env = BuildEnv(CCFLAGS=["-Os"], middleware={})
+                if header == "NimbleC3Config.h":
+                    env["custom_nimble_config"] = relative_config
+                runpy.run_path(
+                    str(root / "scripts/configure_nimble_psram.py"),
+                    init_globals={"env": env, "Import": lambda _: None},
+                )
+
+                def matching(path):
+                    return [callback for pattern, callback in env["middleware"].items()
+                            if fnmatch.fnmatch(str(root / path), pattern)]
+
+                for path in (".pio/libdeps/default/NimBLE-Arduino/src/nimble/mem.c",
+                             "lib/TextPlayer/NimbleTransport.cpp"):
+                    callbacks = matching(path)
+                    self.assertEqual(len(callbacks), 1)
+                    node = object()
+                    self.assertIs(callbacks[0](env, node), node)
+                    config = str(root / relative_config)
+                    self.assertIs(env.dependency[0], node)
+                    self.assertEqual(Path(env.dependency[1]), Path(config))
+                    self.assertEqual(env.object_flags[:2], ["-Os", "-include"])
+                    self.assertEqual(Path(env.object_flags[2]), Path(config))
+                self.assertEqual(env["CCFLAGS"], ["-Os"])
+                self.assertFalse(matching("src/BleInput.cpp"))
+                self.assertFalse(matching("framework/cores/esp32/esp32-hal-bt.c"))
 
 
 if __name__ == "__main__":

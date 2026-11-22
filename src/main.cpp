@@ -20,6 +20,7 @@
 #include <Logging.h>
 #include <Memory.h>
 #include <SPI.h>
+#include <Transport.h>
 #include <TrustedTime.h>
 #include <VectorFontSupport.h>
 #include <WiFi.h>
@@ -1362,7 +1363,7 @@ void loop() {
       screenshotButtonsReleased = false;
       {
         RenderLock lock;
-        ScreenshotUtil::takeScreenshot(renderer);
+        if (activityManager.hasCompleteFramebuffer()) ScreenshotUtil::takeScreenshot(renderer);
       }
     }
     return;
@@ -1503,7 +1504,12 @@ void loop() {
     powerManager.setPowerSaving(false);  // Make sure we're at full performance when skipLoopDelay is requested
     yield();                             // Give FreeRTOS a chance to run tasks, but return immediately
   } else {
-    if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS && !pageturner::holdsCpu.load()) {
+    const bool holdRadioClock = pageturner::holdsCpu.load()
+#if CONFIG_IDF_TARGET_ESP32C3
+                                || textplayer::transportActive()
+#endif
+        ;
+    if (millis() - lastActivityTime >= HalPowerManager::IDLE_POWER_SAVING_MS && !holdRadioClock) {
       // If we've been inactive for a while, increase the delay to save power
       powerManager.setPowerSaving(true);  // Lower CPU frequency after extended inactivity
       // Sleep in short slices and wake the poll as soon as a button contact closes.

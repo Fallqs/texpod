@@ -62,9 +62,27 @@ host configuration to every firmware flavor, including Stable and Nightly.
 
 The common `ble_host` profile pins NimBLE-Arduino 2.5.1 and SDK compatibility
 middleware. C3 injects `NimbleC3Config.h` into both NimBLE and the SDK host:
-internal RAM, Central/Observer, one connection, four bonds, MTU 23, six blocks
-per mbuf pool (256/320 B), and 12 high-priority events. Pool sizes do not describe
-total runtime heap. S3 retains its PSRAM allocator and IPC wrapper; C3 uses neither.
+internal RAM, Central/Observer and Peripheral/Broadcaster, one connection, four
+bonds, two CCCDs, MTU 23, six blocks per mbuf pool (256/320 B), and 12
+high-priority events. Pool sizes do not describe total runtime heap. S3 retains
+its PSRAM allocator and IPC wrapper; C3 uses neither.
+
+Texpod uses the Peripheral role for its BLE GATT service. The transport
+is compiled with the same NimBLE configuration as the host and fails the
+build if the required roles are missing on BLE-enabled builds. Opening Texpod
+starts advertising until a connection, exit, or sleep; disconnect restarts
+advertising. Its Activity stops the HID host before allocating the 16 KiB C3
+glyph pool (256 slots), cache metadata, grid token storage, and an eight-event
+transport queue. The phone can send SD-streamed bitmap pages that exceed the
+negotiated glyph budget. Glyph metrics live with
+cached bitmap data, and token parsing reuses the grid's own storage. Texpod checks
+remaining internal heap before starting NimBLE on C3 and keeps the normal CPU
+clock while the radio is active. The transport fits every GATT value within the
+negotiated MTU, including when the peer only supports MTU 23. Bitmap pages stream
+through one SD temporary file, not a second full-screen RAM buffer. Exit and
+sleep stop the Peripheral and release the page resources. Physical pairing, HID
+role transitions, sleep recovery, heap headroom, and radio endurance still need
+hardware validation.
 
 Historical hardware acceptance records below remain tied to their recorded images
 and library revisions; they do not establish physical acceptance of the 2.5.1 pin.

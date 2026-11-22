@@ -1,0 +1,38 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.crossmux.textplayer'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+
+    defaultConfig {
+        applicationId 'com.crossmux.textplayer'
+        minSdk 26
+        targetSdk 35
+        versionCode 16
+        versionName '0.4.4'
+    }
+
+    def bakedAssets = providers.gradleProperty('texpodBakedAssets').orNull
+    if (bakedAssets != null) {
+        def assetsRoot = file(bakedAssets)
+        if (!new File(assetsRoot, 'texpod/reader.otf').isFile()
+                || !new File(assetsRoot, 'texpod/generations.bin').isFile()
+                || !new File(assetsRoot, 'texpod/OFL.txt').isFile()) {
+            throw new GradleException('Incomplete Texpod baked font assets')
+        }
+        sourceSets.main.assets.srcDir assetsRoot
+        androidResources.noCompress += 'otf'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}

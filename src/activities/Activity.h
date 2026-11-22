@@ -62,6 +62,8 @@ class Activity {
   virtual bool acceptsRemoteInput() const { return false; }
   // Returns true when the activity schedules its own forced refresh.
   virtual bool handleForcedRefresh() { return false; }
+  // Called under RenderLock before a screenshot reads the framebuffer.
+  virtual bool hasCompleteFramebuffer() const { return true; }
   virtual bool isHomeActivity() const { return false; }
   virtual bool handleHomeGesture() { return false; }
   virtual MainTab mainTab() const { return MainTab::None; }
